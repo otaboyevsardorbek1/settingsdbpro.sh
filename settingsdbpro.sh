@@ -2,7 +2,7 @@
 
 # ============================================================================
 # PROFESSIONAL DATABASE MANAGEMENT SYSTEM
-# Version: 3.0 (Enterprise Edition)
+# Version: 3.3 (Enterprise Edition)
 # ============================================================================
 # Ushbu skript MySQL va PostgreSQL ni to'liq boshqarish imkonini beradi
 # Muallif: Database Administrator
@@ -22,19 +22,24 @@ NC='\033[0m'
 
 # Global o'zgaruvchilar
 SCRIPT_NAME="Database Professional Manager"
-SCRIPT_VERSION="3.0"
+SCRIPT_VERSION="3.3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="$SCRIPT_DIR/db_configs"
 BACKUP_DIR="$SCRIPT_DIR/db_backups"
 LOG_DIR="$SCRIPT_DIR/db_logs"
 SSL_DIR="$SCRIPT_DIR/db_ssl"
 TEMP_DIR="$SCRIPT_DIR/db_temp"
+CACHE_DIR="$SCRIPT_DIR/db_cache"
+DATA_DIR="$SCRIPT_DIR/db_data"
+ARCHIVE_DIR="$SCRIPT_DIR/db_archive"
 CONNECTION_FILE="$CONFIG_DIR/connections.db"
 HISTORY_FILE="$LOG_DIR/command_history.log"
+ERROR_LOG="$LOG_DIR/error.log"
+DEBUG_LOG="$LOG_DIR/debug.log"
 
 # Papkalarni yaratish
-mkdir -p "$CONFIG_DIR" "$BACKUP_DIR" "$LOG_DIR" "$SSL_DIR" "$TEMP_DIR"
-touch "$CONNECTION_FILE" "$HISTORY_FILE"
+mkdir -p "$CONFIG_DIR" "$BACKUP_DIR" "$LOG_DIR" "$SSL_DIR" "$TEMP_DIR" "$CACHE_DIR" "$DATA_DIR" "$ARCHIVE_DIR"
+touch "$CONNECTION_FILE" "$HISTORY_FILE" "$ERROR_LOG" "$DEBUG_LOG"
 
 # ============================================================================
 # LOGGING FUNKSIYALARI
@@ -61,6 +66,19 @@ log_command() {
     local user="$2"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo "$timestamp | $user | $cmd" >> "$HISTORY_FILE"
+}
+
+log_error() {
+    local message="$1"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $message" >> "$ERROR_LOG"
+    log "ERROR" "$message"
+}
+
+log_debug() {
+    local message="$1"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $message" >> "$DEBUG_LOG"
 }
 
 # ============================================================================
@@ -99,6 +117,204 @@ confirm_action() {
 }
 
 # ============================================================================
+# KESH TOZALASH FUNKSIYALARI (TO'LIQ)
+# ============================================================================
+
+clean_cache() {
+    show_menu_header "KESH TOZALASH"
+    
+    echo "1) 🧹 Barcha kesh fayllarni tozalash"
+    echo "2) 📁 Log fayllarni tozalash"
+    echo "3) 📦 Backup fayllarni tozalash"
+    echo "4) 🔧 Konfiguratsiya fayllarini tozalash"
+    echo "5) 🗑️ Temp fayllarni tozalash"
+    echo "6) 📊 Kesh statistikasi"
+    echo "7) 🔄 Barchasini tozalash"
+    echo "8) ◀️ Orqaga"
+    
+    read -p "Tanlov: " cache_choice
+    
+    case $cache_choice in
+        1)
+            if confirm_action "Barcha kesh fayllar o'chirilsinmi?"; then
+                find "$CACHE_DIR" -type f -delete 2>/dev/null
+                log "SUCCESS" "Barcha kesh fayllar tozalandi"
+            fi
+            ;;
+        2)
+            if confirm_action "Log fayllar tozalansinmi?"; then
+                find "$LOG_DIR" -name "*.log" -mtime +1 -delete 2>/dev/null
+                > "$LOG_DIR/db_manager.log" 2>/dev/null
+                > "$ERROR_LOG" 2>/dev/null
+                > "$DEBUG_LOG" 2>/dev/null
+                log "SUCCESS" "Log fayllar tozalandi"
+            fi
+            ;;
+        3)
+            if confirm_action "Backup fayllar tozalansinmi?"; then
+                read -p "Necha kundan eski backup'lar o'chirilsin? (7): " days
+                days=${days:-7}
+                find "$BACKUP_DIR" -name "*.sql.gz" -mtime +$days -delete 2>/dev/null
+                find "$BACKUP_DIR" -name "*.sql" -mtime +$days -delete 2>/dev/null
+                find "$BACKUP_DIR" -name "*.tar" -mtime +$days -delete 2>/dev/null
+                find "$BACKUP_DIR" -name "*.gz" -mtime +$days -delete 2>/dev/null
+                log "SUCCESS" "$days kundan eski backup'lar tozalandi"
+            fi
+            ;;
+        4)
+            if confirm_action "Konfiguratsiya fayllari tozalansinmi?"; then
+                find "$CONFIG_DIR" -name "*.conf" -mtime +30 -delete 2>/dev/null
+                find "$CONFIG_DIR" -name "*.old" -delete 2>/dev/null
+                find "$CONFIG_DIR" -name "*.bak" -delete 2>/dev/null
+                log "SUCCESS" "Eski konfiguratsiya fayllari tozalandi"
+            fi
+            ;;
+        5)
+            if confirm_action "Temp fayllar tozalansinmi?"; then
+                rm -rf "$TEMP_DIR"/* 2>/dev/null
+                mkdir -p "$TEMP_DIR" 2>/dev/null
+                log "SUCCESS" "Temp fayllar tozalandi"
+            fi
+            ;;
+        6)
+            echo -e "\n${CYAN}Kesh statistikasi:${NC}"
+            echo "📁 Log fayllar: $(find "$LOG_DIR" -type f -name "*.log" 2>/dev/null | wc -l) ta, $(du -sh "$LOG_DIR" 2>/dev/null | cut -f1)"
+            echo "📦 Backup fayllar: $(find "$BACKUP_DIR" -name "*.sql.gz" 2>/dev/null | wc -l) ta, $(du -sh "$BACKUP_DIR" 2>/dev/null | cut -f1)"
+            echo "🔧 Konfiguratsiya: $(find "$CONFIG_DIR" -type f 2>/dev/null | wc -l) ta, $(du -sh "$CONFIG_DIR" 2>/dev/null | cut -f1)"
+            echo "🗑️ Temp fayllar: $(find "$TEMP_DIR" -type f 2>/dev/null | wc -l) ta, $(du -sh "$TEMP_DIR" 2>/dev/null | cut -f1)"
+            echo "🧹 Kesh fayllar: $(find "$CACHE_DIR" -type f 2>/dev/null | wc -l) ta, $(du -sh "$CACHE_DIR" 2>/dev/null | cut -f1)"
+            echo "📊 Data fayllar: $(find "$DATA_DIR" -type f 2>/dev/null | wc -l) ta, $(du -sh "$DATA_DIR" 2>/dev/null | cut -f1)"
+            echo "📚 Archive fayllar: $(find "$ARCHIVE_DIR" -type f 2>/dev/null | wc -l) ta, $(du -sh "$ARCHIVE_DIR" 2>/dev/null | cut -f1)"
+            ;;
+        7)
+            if confirm_action "BARCHA fayllar tozalansinmi? (ehtiyot bo'ling!)"; then
+                rm -rf "$CACHE_DIR"/* 2>/dev/null
+                rm -rf "$TEMP_DIR"/* 2>/dev/null
+                rm -rf "$DATA_DIR"/* 2>/dev/null
+                find "$LOG_DIR" -name "*.log" -delete 2>/dev/null
+                > "$LOG_DIR/db_manager.log" 2>/dev/null
+                > "$ERROR_LOG" 2>/dev/null
+                > "$DEBUG_LOG" 2>/dev/null
+                find "$BACKUP_DIR" -name "*.sql.gz" -mtime +1 -delete 2>/dev/null
+                log "SUCCESS" "Barcha kesh va temp fayllar tozalandi"
+            fi
+            ;;
+        8) return ;;
+        *) log_error "Noto'g'ri tanlov: $cache_choice" ;;
+    esac
+    press_enter
+}
+
+# Root huquqida yaratilgan fayllarni tozalash
+clean_root_files() {
+    show_menu_header "ROOT FAYLLARINI TOZALASH"
+    
+    echo "1) 🔍 Root fayllarini qidirish"
+    echo "2) 🗑️ Root fayllarini o'chirish"
+    echo "3) 🔄 Root fayllarini oddiy foydalanuvchiga o'tkazish"
+    echo "4) 📊 Root fayllar statistikasi"
+    echo "5) ◀️ Orqaga"
+    
+    read -p "Tanlov: " root_choice
+    
+    case $root_choice in
+        1)
+            echo -e "\n${CYAN}Root egasidagi fayllar:${NC}"
+            find "$SCRIPT_DIR" -user root -type f -not -path "*/\.*" 2>/dev/null | head -30
+            echo -e "\nJami: $(find "$SCRIPT_DIR" -user root -type f 2>/dev/null | wc -l) ta"
+            ;;
+        2)
+            if confirm_action "Root egasidagi barcha fayllar o'chirilsinmi?"; then
+                find "$SCRIPT_DIR" -user root -type f -delete 2>/dev/null
+                log "SUCCESS" "Root fayllari o'chirildi"
+            fi
+            ;;
+        3)
+            read -p "Foydalanuvchi nomi (joriy: $SUDO_USER): " username
+            username=${username:-$SUDO_USER}
+            if [ -n "$username" ]; then
+                find "$SCRIPT_DIR" -user root -type f -exec chown $username:$username {} \; 2>/dev/null
+                log "SUCCESS" "Root fayllari $username ga o'tkazildi"
+            fi
+            ;;
+        4)
+            echo -e "\n${CYAN}Root fayllar statistikasi:${NC}"
+            echo "Jami root fayllar: $(find "$SCRIPT_DIR" -user root -type f 2>/dev/null | wc -l) ta"
+            echo "Umumiy hajmi: $(find "$SCRIPT_DIR" -user root -type f -exec du -b {} \; 2>/dev/null | awk '{sum+=$1} END {print sum/1024/1024 " MB"}')"
+            echo "Eng katta fayllar:"
+            find "$SCRIPT_DIR" -user root -type f -exec ls -lh {} \; 2>/dev/null | sort -k5 -rh | head -5
+            ;;
+        5) return ;;
+        *) log_error "Noto'g'ri tanlov: $root_choice" ;;
+    esac
+    press_enter
+}
+
+# Dastur papkalarini tozalash
+clean_program_folders() {
+    show_menu_header "DASTUR PAPKALARINI TOZALASH"
+    
+    echo "1) 🗑️ Bo'sh papkalarni o'chirish"
+    echo "2) 📦 Eski arxivlarni tozalash"
+    echo "3) 🔄 Duplikat fayllarni topish"
+    echo "4) 🧹 Barcha qo'shimcha papkalarni tozalash"
+    echo "5) 📊 Papkalar statistikasi"
+    echo "6) ◀️ Orqaga"
+    
+    read -p "Tanlov: " folder_choice
+    
+    case $folder_choice in
+        1)
+            if confirm_action "Barcha bo'sh papkalar o'chirilsinmi?"; then
+                find "$SCRIPT_DIR" -type d -empty -delete 2>/dev/null
+                log "SUCCESS" "Bo'sh papkalar o'chirildi"
+            fi
+            ;;
+        2)
+            if confirm_action "Eski arxivlar tozalansinmi?"; then
+                find "$ARCHIVE_DIR" -name "*.tar.gz" -mtime +90 -delete 2>/dev/null
+                find "$ARCHIVE_DIR" -name "*.zip" -mtime +90 -delete 2>/dev/null
+                log "SUCCESS" "90 kundan eski arxivlar tozalandi"
+            fi
+            ;;
+        3)
+            echo -e "\n${CYAN}Duplikat fayllar qidirilmoqda...${NC}"
+            find "$SCRIPT_DIR" -type f -exec md5sum {} \; 2>/dev/null | sort | uniq -w32 -dD | head -20
+            ;;
+        4)
+            if confirm_action "Barcha qo'shimcha papkalar tozalansinmi?"; then
+                folders=("$CONFIG_DIR" "$BACKUP_DIR" "$LOG_DIR" "$SSL_DIR" "$TEMP_DIR" "$CACHE_DIR" "$DATA_DIR" "$ARCHIVE_DIR")
+                for folder in "${folders[@]}"; do
+                    if [ -d "$folder" ]; then
+                        rm -rf "$folder"/* 2>/dev/null
+                        log "INFO" "$folder tozalandi"
+                    fi
+                done
+                log "SUCCESS" "Barcha qo'shimcha papkalar tozalandi"
+            fi
+            ;;
+        5)
+            echo -e "\n${CYAN}Papkalar statistikasi:${NC}"
+            echo "📁 Jami papkalar: $(find "$SCRIPT_DIR" -type d 2>/dev/null | wc -l) ta"
+            echo "📊 Papkalar hajmi: $(du -sh "$SCRIPT_DIR" 2>/dev/null | cut -f1)"
+            echo ""
+            echo "Asosiy papkalar:"
+            du -sh "$CONFIG_DIR" 2>/dev/null || echo "$CONFIG_DIR: 0B"
+            du -sh "$BACKUP_DIR" 2>/dev/null || echo "$BACKUP_DIR: 0B"
+            du -sh "$LOG_DIR" 2>/dev/null || echo "$LOG_DIR: 0B"
+            du -sh "$SSL_DIR" 2>/dev/null || echo "$SSL_DIR: 0B"
+            du -sh "$TEMP_DIR" 2>/dev/null || echo "$TEMP_DIR: 0B"
+            du -sh "$CACHE_DIR" 2>/dev/null || echo "$CACHE_DIR: 0B"
+            du -sh "$DATA_DIR" 2>/dev/null || echo "$DATA_DIR: 0B"
+            du -sh "$ARCHIVE_DIR" 2>/dev/null || echo "$ARCHIVE_DIR: 0B"
+            ;;
+        6) return ;;
+        *) log_error "Noto'g'ri tanlov: $folder_choice" ;;
+    esac
+    press_enter
+}
+
+# ============================================================================
 # MA'LUMOTLAR BAZASI ULANISH FUNKSIYALARI
 # ============================================================================
 
@@ -115,7 +331,6 @@ get_mysql_connection_info() {
         echo "PASSWORD=$MYSQL_PASSWORD"
         echo "DATABASE=$MYSQL_DATABASE"
     else
-        # Default qiymatlar
         echo "HOST=localhost"
         echo "PORT=3306"
         echo "USER=root"
@@ -137,7 +352,6 @@ get_postgresql_connection_info() {
         echo "PASSWORD=$PG_PASSWORD"
         echo "DATABASE=$PG_DATABASE"
     else
-        # Default qiymatlar
         echo "HOST=localhost"
         echo "PORT=5432"
         echo "USER=postgres"
@@ -154,26 +368,15 @@ generate_mysql_url() {
     local password="$4"
     local database="$5"
     
-    # URL formatlari
     echo -e "\n${CYAN}${BOLD}MySQL Ulanish URL'lari:${NC}\n"
-    
-    # Standard URL
     echo -e "${WHITE}Standard URL:${NC}"
     echo "mysql://$user:$password@$host:$port/$database"
-    
-    # JDBC URL
     echo -e "\n${WHITE}JDBC URL:${NC}"
     echo "jdbc:mysql://$host:$port/$database?user=$user&password=$password"
-    
-    # Python SQLAlchemy URL
     echo -e "\n${WHITE}Python SQLAlchemy URL:${NC}"
     echo "mysql+pymysql://$user:$password@$host:$port/$database"
-    
-    # PHP PDO URL
     echo -e "\n${WHITE}PHP PDO URL:${NC}"
     echo "\$pdo = new PDO('mysql:host=$host;port=$port;dbname=$database', '$user', '$password');"
-    
-    # Node.js mysql2 URL
     echo -e "\n${WHITE}Node.js mysql2 URL:${NC}"
     echo "const mysql = require('mysql2');"
     echo "const connection = mysql.createConnection({"
@@ -183,8 +386,6 @@ generate_mysql_url() {
     echo "  password: '$password',"
     echo "  database: '$database'"
     echo "});"
-    
-    # Command line
     echo -e "\n${WHITE}Command line:${NC}"
     echo "mysql -h $host -P $port -u $user -p$password $database"
 }
@@ -198,25 +399,15 @@ generate_postgresql_url() {
     local database="$5"
     
     echo -e "\n${CYAN}${BOLD}PostgreSQL Ulanish URL'lari:${NC}\n"
-    
-    # Standard URL
     echo -e "${WHITE}Standard URL:${NC}"
     echo "postgresql://$user:$password@$host:$port/$database"
-    
-    # JDBC URL
     echo -e "\n${WHITE}JDBC URL:${NC}"
     echo "jdbc:postgresql://$host:$port/$database?user=$user&password=$password"
-    
-    # Python SQLAlchemy URL
     echo -e "\n${WHITE}Python SQLAlchemy URL:${NC}"
     echo "postgresql+psycopg2://$user:$password@$host:$port/$database"
     echo "postgresql+asyncpg://$user:$password@$host:$port/$database"
-    
-    # PHP PDO URL
     echo -e "\n${WHITE}PHP PDO URL:${NC}"
     echo "\$pdo = new PDO('pgsql:host=$host;port=$port;dbname=$database', '$user', '$password');"
-    
-    # Node.js pg URL
     echo -e "\n${WHITE}Node.js pg URL:${NC}"
     echo "const { Client } = require('pg');"
     echo "const client = new Client({"
@@ -226,12 +417,8 @@ generate_postgresql_url() {
     echo "  password: '$password',"
     echo "  database: '$database'"
     echo "});"
-    
-    # Command line
     echo -e "\n${WHITE}Command line:${NC}"
     echo "psql -h $host -p $port -U $user -d $database"
-    
-    # Libpq connection string
     echo -e "\n${WHITE}Libpq Connection String:${NC}"
     echo "host=$host port=$port dbname=$database user=$user password=$password"
 }
@@ -240,7 +427,6 @@ generate_postgresql_url() {
 # MYSQL FUNKSIYALARI (TO'LIQ)
 # ============================================================================
 
-# MySQL mavjudligini tekshirish
 check_mysql() {
     if ! command -v mysql &> /dev/null; then
         return 1
@@ -248,7 +434,6 @@ check_mysql() {
     return 0
 }
 
-# MySQL holatini ko'rish
 mysql_status() {
     show_menu_header "MySQL HOLATI"
     
@@ -257,36 +442,25 @@ mysql_status() {
         return 1
     fi
     
-    # Xizmat holati
     echo -e "${CYAN}${BOLD}Xizmat holati:${NC}"
-    sudo systemctl status mysql --no-pager -l | grep -E "Active|Loaded"
+    sudo systemctl status mysql --no-pager -l 2>/dev/null | grep -E "Active|Loaded" || echo "MySQL xizmati topilmadi"
     
-    # Versiya
     echo -e "\n${CYAN}${BOLD}Versiya:${NC}"
-    mysql --version
+    mysql --version 2>/dev/null
     
-    # Port
     echo -e "\n${CYAN}${BOLD}Port:${NC}"
-    sudo ss -tlnp | grep mysql || echo "3306"
+    sudo ss -tlnp 2>/dev/null | grep mysql || echo "3306"
     
-    # Ulanishlar
     echo -e "\n${CYAN}${BOLD}Faol ulanishlar:${NC}"
-    sudo mysql -e "SHOW STATUS LIKE 'Threads_connected';" 2>/dev/null | grep Threads_connected
+    sudo mysql -e "SHOW STATUS LIKE 'Threads_connected';" 2>/dev/null | grep Threads_connected || echo "Ma'lumot olish imkonsiz"
     
-    # Ma'lumotlar bazalari soni
     echo -e "\n${CYAN}${BOLD}Ma'lumotlar bazalari:${NC}"
-    sudo mysql -e "SHOW DATABASES;" 2>/dev/null | wc -l | xargs echo "Jami:"
+    sudo mysql -e "SHOW DATABASES;" 2>/dev/null | wc -l | xargs echo "Jami:" || echo "Ma'lumot olish imkonsiz"
     
-    # Processlist
     echo -e "\n${CYAN}${BOLD}Processlar:${NC}"
-    sudo mysql -e "SHOW PROCESSLIST;" 2>/dev/null | head -10
-    
-    # Sozlamalar
-    echo -e "\n${CYAN}${BOLD}Muhim sozlamalar:${NC}"
-    sudo mysql -e "SHOW VARIABLES WHERE Variable_name IN ('max_connections', 'innodb_buffer_pool_size', 'wait_timeout', 'interactive_timeout');" 2>/dev/null
+    sudo mysql -e "SHOW PROCESSLIST;" 2>/dev/null | head -10 || echo "Ma'lumot olish imkonsiz"
 }
 
-# MySQL foydalanuvchilari
 mysql_list_users() {
     show_menu_header "MYSQL FOYDALANUVCHILARI"
     
@@ -296,27 +470,9 @@ mysql_list_users() {
     fi
     
     echo -e "${GREEN}${BOLD}Barcha foydalanuvchilar:${NC}\n"
-    sudo mysql -e "SELECT 
-        User, 
-        Host, 
-        plugin,
-        authentication_string as Password_Hash,
-        account_locked,
-        password_expired
-    FROM mysql.user 
-    ORDER BY User;" 2>/dev/null | column -t -s $'\t'
-    
-    echo -e "\n${GREEN}${BOLD}Grantlar bilan:${NC}\n"
-    sudo mysql -e "SELECT 
-        User, 
-        Host, 
-        Grant_priv,
-        Super_priv,
-        Create_user_priv
-    FROM mysql.user;" 2>/dev/null | column -t -s $'\t'
+    sudo mysql -e "SELECT User, Host, plugin, authentication_string as Password_Hash, account_locked, password_expired FROM mysql.user ORDER BY User;" 2>/dev/null | column -t -s $'\t' || echo "Ma'lumot olish imkonsiz"
 }
 
-# Yangi MySQL foydalanuvchi yaratish
 mysql_create_user() {
     show_menu_header "YANGI MYSQL FOYDALANUVCHI"
     
@@ -327,7 +483,6 @@ mysql_create_user() {
     read -s -p "Parol: " password
     echo ""
     
-    # Authentication plugin tanlash
     echo -e "\nAuth plugin tanlang:"
     echo "1) mysql_native_password (default)"
     echo "2) caching_sha2_password"
@@ -341,13 +496,11 @@ mysql_create_user() {
         *) auth_plugin="mysql_native_password" ;;
     esac
     
-    # Foydalanuvchi yaratish
     sudo mysql -e "CREATE USER '$username'@'$host' IDENTIFIED WITH $auth_plugin BY '$password';" 2>/dev/null
     
     if [ $? -eq 0 ]; then
         log "SUCCESS" "Foydalanuvchi yaratildi: $username@$host"
         
-        # Maxsus sozlamalar
         echo -e "\nQo'shimcha sozlamalar:"
         echo "1) Parol muddatini belgilash"
         echo "2) Hisobni bloklash"
@@ -378,7 +531,6 @@ mysql_create_user() {
     fi
 }
 
-# MySQL foydalanuvchi o'chirish
 mysql_delete_user() {
     show_menu_header "MYSQL FOYDALANUVCHI O'CHIRISH"
     
@@ -401,16 +553,13 @@ mysql_delete_user() {
     fi
 }
 
-# MySQL foydalanuvchi parolini o'zgartirish
 mysql_change_password() {
     show_menu_header "MYSQL PAROL O'ZGARTIRISH"
     
-    local username host old_password new_password
+    local username host new_password new_password2
     
     read -p "Foydalanuvchi nomi: " username
     read -p "Xost: " host
-    read -s -p "Eski parol: " old_password
-    echo ""
     read -s -p "Yangi parol: " new_password
     echo ""
     read -s -p "Yangi parol (takror): " new_password2
@@ -431,7 +580,6 @@ mysql_change_password() {
     fi
 }
 
-# MySQL grantlar qo'shish
 mysql_grant_privileges() {
     show_menu_header "MYSQL RUXSATLAR BERISH"
     
@@ -463,21 +611,15 @@ mysql_grant_privileges() {
         2) privileges="SELECT" ;;
         3) privileges="SELECT, INSERT, UPDATE, DELETE" ;;
         4) privileges="CREATE, ALTER, DROP, INDEX" ;;
-        5) 
-            read -p "Ruxsatlarni vergul bilan yozing: " privileges
-            ;;
-        6)
-            read -p "Ruxsatlar: " base_priv
-            privileges="$base_priv WITH GRANT OPTION"
-            ;;
+        5) read -p "Ruxsatlarni vergul bilan yozing: " privileges ;;
+        6) read -p "Ruxsatlar: " base_priv && privileges="$base_priv WITH GRANT OPTION" ;;
+        *) log_error "Noto'g'ri tanlov" && return ;;
     esac
     
     sudo mysql -e "GRANT $privileges ON $database.* TO '$username'@'$host'; FLUSH PRIVILEGES;" 2>/dev/null
     
     if [ $? -eq 0 ]; then
         log "SUCCESS" "Ruxsatlar berildi: $privileges"
-        
-        # Grantlarni ko'rish
         echo -e "\n${CYAN}Yangi grantlar:${NC}"
         sudo mysql -e "SHOW GRANTS FOR '$username'@'$host';" 2>/dev/null
     else
@@ -485,7 +627,6 @@ mysql_grant_privileges() {
     fi
 }
 
-# MySQL grantlarni ko'rish
 mysql_show_grants() {
     show_menu_header "MYSQL GRANTLAR"
     
@@ -497,11 +638,10 @@ mysql_show_grants() {
     sudo mysql -e "SHOW GRANTS FOR '$username'@'$host';" 2>/dev/null
 }
 
-# MySQL grantlarni olib tashlash
 mysql_revoke_privileges() {
     show_menu_header "MYSQL RUXSATLARNI OLIB TASHLASH"
     
-    local username host database
+    local username host database privileges
     
     read -p "Foydalanuvchi nomi: " username
     read -p "Xost: " host
@@ -521,29 +661,16 @@ mysql_revoke_privileges() {
     fi
 }
 
-# MySQL ma'lumotlar bazalarini ko'rish
 mysql_list_databases() {
     show_menu_header "MYSQL MA'LUMOTLAR BAZALARI"
     
     echo -e "${GREEN}${BOLD}Barcha ma'lumotlar bazalari:${NC}\n"
-    sudo mysql -e "SELECT 
-        SCHEMA_NAME as 'Database',
-        DEFAULT_CHARACTER_SET_NAME as 'Charset',
-        DEFAULT_COLLATION_NAME as 'Collation'
-    FROM information_schema.SCHEMATA 
-    ORDER BY SCHEMA_NAME;" 2>/dev/null | column -t -s $'\t'
+    sudo mysql -e "SELECT SCHEMA_NAME as 'Database', DEFAULT_CHARACTER_SET_NAME as 'Charset', DEFAULT_COLLATION_NAME as 'Collation' FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME;" 2>/dev/null | column -t -s $'\t'
     
     echo -e "\n${GREEN}${BOLD}Hajmlari bilan:${NC}\n"
-    sudo mysql -e "SELECT 
-        table_schema as 'Database',
-        ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as 'Size (MB)',
-        COUNT(*) as 'Tables'
-    FROM information_schema.tables 
-    GROUP BY table_schema
-    ORDER BY 2 DESC;" 2>/dev/null | column -t -s $'\t'
+    sudo mysql -e "SELECT table_schema as 'Database', ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as 'Size (MB)', COUNT(*) as 'Tables' FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC;" 2>/dev/null | column -t -s $'\t'
 }
 
-# Yangi MySQL ma'lumotlar bazasi yaratish
 mysql_create_database() {
     show_menu_header "YANGI MYSQL MA'LUMOTLAR BAZASI"
     
@@ -565,7 +692,6 @@ mysql_create_database() {
     if [ $? -eq 0 ]; then
         log "SUCCESS" "Ma'lumotlar bazasi yaratildi: $dbname"
         
-        # Foydalanuvchiga ruxsat berish
         if confirm_action "Foydalanuvchiga ruxsat berilsinmi?"; then
             read -p "Foydalanuvchi nomi: " username
             read -p "Xost: " host
@@ -577,7 +703,6 @@ mysql_create_database() {
     fi
 }
 
-# MySQL ma'lumotlar bazasini o'chirish
 mysql_drop_database() {
     show_menu_header "MYSQL MA'LUMOTLAR BAZASINI O'CHIRISH"
     
@@ -597,7 +722,6 @@ mysql_drop_database() {
     fi
 }
 
-# MySQL sozlamalarini ko'rish
 mysql_config_view() {
     show_menu_header "MYSQL SOZLAMALARI"
     
@@ -608,28 +732,12 @@ mysql_config_view() {
         grep -v "^#" "$config_file" | grep -v "^$" | head -50
         
         echo -e "\n${CYAN}${BOLD}Muhim o'zgaruvchilar:${NC}\n"
-        sudo mysql -e "SHOW VARIABLES WHERE Variable_name IN (
-            'max_connections',
-            'innodb_buffer_pool_size',
-            'innodb_log_file_size',
-            'query_cache_size',
-            'tmp_table_size',
-            'max_allowed_packet',
-            'wait_timeout',
-            'interactive_timeout',
-            'sort_buffer_size',
-            'read_buffer_size',
-            'read_rnd_buffer_size',
-            'join_buffer_size',
-            'thread_cache_size',
-            'table_open_cache'
-        );" 2>/dev/null | column -t -s $'\t'
+        sudo mysql -e "SHOW VARIABLES WHERE Variable_name IN ('max_connections', 'innodb_buffer_pool_size', 'innodb_log_file_size', 'query_cache_size', 'tmp_table_size', 'max_allowed_packet', 'wait_timeout', 'interactive_timeout', 'sort_buffer_size', 'read_buffer_size', 'read_rnd_buffer_size', 'join_buffer_size', 'thread_cache_size', 'table_open_cache');" 2>/dev/null | column -t -s $'\t'
     else
         log "ERROR" "Sozlamalar fayli topilmadi"
     fi
 }
 
-# MySQL sozlamalarini o'zgartirish
 mysql_config_edit() {
     show_menu_header "MYSQL SOZLAMALARINI O'ZGARTIRISH"
     
@@ -688,21 +796,20 @@ mysql_config_edit() {
             sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
             log "INFO" "Sozlamalar fayli tahrirlandi"
             ;;
+        *) log_error "Noto'g'ri tanlov" && return ;;
     esac
     
     if confirm_action "MySQL ni qayta ishga tushirish kerak. Hozir bajaramizmi?"; then
-        sudo systemctl restart mysql
+        sudo systemctl restart mysql 2>/dev/null
         log "SUCCESS" "MySQL qayta ishga tushirildi"
     fi
 }
 
-# MySQL ulanish URL generatsiya
 mysql_generate_url() {
     show_menu_header "MYSQL ULANISH URL GENERATSIYASI"
     
     local host port user password database
     
-    # Avval saqlangan sozlamalarni o'qish
     if [[ -f "$CONFIG_DIR/mysql_current.conf" ]]; then
         source "$CONFIG_DIR/mysql_current.conf"
     else
@@ -718,7 +825,6 @@ mysql_generate_url() {
     
     generate_mysql_url "$host" "$port" "$user" "$password" "$database"
     
-    # Sozlamalarni saqlash
     if confirm_action "Bu sozlamalarni saqlash kerakmi?"; then
         cat > "$CONFIG_DIR/mysql_current.conf" << EOF
 MYSQL_HOST="$host"
@@ -731,7 +837,6 @@ EOF
     fi
 }
 
-# MySQL performans statistikasi
 mysql_performance_stats() {
     show_menu_header "MYSQL PERFORMANS STATISTIKASI"
     
@@ -745,16 +850,12 @@ mysql_performance_stats() {
     
     echo -e "\n${CYAN}${BOLD}Buffer pool statistikasi:${NC}\n"
     sudo mysql -e "SHOW ENGINE INNODB STATUS\G" 2>/dev/null | grep -A 10 "BUFFER POOL AND MEMORY"
-    
-    echo -e "\n${CYAN}${BOLD}Eng ko'p ishlatilgan so'rovlar:${NC}\n"
-    sudo mysql -e "SELECT * FROM performance_schema.events_statements_summary_by_digest ORDER BY SUM_TIMER_WAIT DESC LIMIT 10\G" 2>/dev/null
 }
 
 # ============================================================================
 # POSTGRESQL FUNKSIYALARI (TO'LIQ)
 # ============================================================================
 
-# PostgreSQL mavjudligini tekshirish
 check_postgresql() {
     if ! command -v psql &> /dev/null; then
         return 1
@@ -762,7 +863,6 @@ check_postgresql() {
     return 0
 }
 
-# PostgreSQL holatini ko'rish
 postgresql_status() {
     show_menu_header "POSTGRESQL HOLATI"
     
@@ -771,58 +871,32 @@ postgresql_status() {
         return 1
     fi
     
-    # Xizmat holati
     echo -e "${CYAN}${BOLD}Xizmat holati:${NC}"
-    sudo systemctl status postgresql --no-pager -l | grep -E "Active|Loaded"
+    sudo systemctl status postgresql --no-pager -l 2>/dev/null | grep -E "Active|Loaded"
     
-    # Versiya
     echo -e "\n${CYAN}${BOLD}Versiya:${NC}"
     sudo -u postgres psql -c "SELECT version();" 2>/dev/null | grep PostgreSQL
     
-    # Port
     echo -e "\n${CYAN}${BOLD}Port:${NC}"
-    sudo ss -tlnp | grep postgres || echo "5432"
+    sudo ss -tlnp 2>/dev/null | grep postgres || echo "5432"
     
-    # Ulanishlar
     echo -e "\n${CYAN}${BOLD}Faol ulanishlar:${NC}"
     sudo -u postgres psql -c "SELECT count(*) as active_connections FROM pg_stat_activity;" 2>/dev/null
     
-    # Ma'lumotlar bazalari soni
     echo -e "\n${CYAN}${BOLD}Ma'lumotlar bazalari:${NC}"
     sudo -u postgres psql -c "SELECT count(*) FROM pg_database WHERE datistemplate = false;" 2>/dev/null
     
-    # Processlist
-    echo -e "\n${CYAN}${BOLD}Processlar:${NC}"
-    sudo -u postgres psql -x -c "SELECT * FROM pg_stat_activity WHERE state = 'active' LIMIT 5;" 2>/dev/null
-    
-    # Sozlamalar
     echo -e "\n${CYAN}${BOLD}Muhim sozlamalar:${NC}"
     sudo -u postgres psql -c "SELECT name, setting, unit FROM pg_settings WHERE name IN ('max_connections', 'shared_buffers', 'work_mem', 'maintenance_work_mem', 'effective_cache_size', 'wal_buffers');" 2>/dev/null
 }
 
-# PostgreSQL foydalanuvchilari
 postgresql_list_users() {
     show_menu_header "POSTGRESQL FOYDALANUVCHILARI"
     
     echo -e "${GREEN}${BOLD}Barcha foydalanuvchilar:${NC}\n"
     sudo -u postgres psql -c "\du" 2>/dev/null
-    
-    echo -e "\n${GREEN}${BOLD}Foydalanuvchi ma'lumotlari:${NC}\n"
-    sudo -u postgres psql -c "SELECT 
-        rolname as username,
-        rolsuper as superuser,
-        rolcreaterole as create_role,
-        rolcreatedb as create_db,
-        rolcanlogin as can_login,
-        rolreplication as replication,
-        rolconnlimit as connection_limit,
-        rolvaliduntil as valid_until
-    FROM pg_roles 
-    WHERE rolname NOT LIKE 'pg_%'
-    ORDER BY rolname;" 2>/dev/null | column -t -s $'\t'
 }
 
-# Yangi PostgreSQL foydalanuvchi yaratish
 postgresql_create_user() {
     show_menu_header "YANGI POSTGRESQL FOYDALANUVCHI"
     
@@ -845,20 +919,19 @@ postgresql_create_user() {
         2) options="SUPERUSER" ;;
         3) options="CREATEDB" ;;
         4) options="REPLICATION" ;;
+        *) options="" ;;
     esac
     
-    # Qo'shimcha sozlamalar
     if confirm_action "Ulanish limiti belgilansinmi?"; then
         read -p "Maksimal ulanishlar soni: " conn_limit
         options="$options CONNECTION LIMIT $conn_limit"
     fi
     
     if confirm_action "Parol amal qilish muddati belgilansinmi?"; then
-        read -p "Muddat (YYYY-MM-DD formatida): " valid_until
+        read -p "Muddat (YYYY-MM-DD): " valid_until
         options="$options VALID UNTIL '$valid_until'"
     fi
     
-    # Foydalanuvchi yaratish
     sudo -u postgres psql -c "CREATE USER $username WITH PASSWORD '$password' $options;" 2>/dev/null
     
     if [ $? -eq 0 ]; then
@@ -868,7 +941,6 @@ postgresql_create_user() {
     fi
 }
 
-# PostgreSQL foydalanuvchi o'chirish
 postgresql_delete_user() {
     show_menu_header "POSTGRESQL FOYDALANUVCHI O'CHIRISH"
     
@@ -878,7 +950,6 @@ postgresql_delete_user() {
     read -p "Foydalanuvchi nomi: " username
     
     if confirm_action "Foydalanuvchi $username ni o'chirishni tasdiqlaysizmi?"; then
-        # Avval foydalanuvchiga tegishli obyektlarni o'tkazish
         sudo -u postgres psql -c "REASSIGN OWNED BY $username TO postgres;" 2>/dev/null
         sudo -u postgres psql -c "DROP OWNED BY $username;" 2>/dev/null
         sudo -u postgres psql -c "DROP USER IF EXISTS $username;" 2>/dev/null
@@ -891,11 +962,10 @@ postgresql_delete_user() {
     fi
 }
 
-# PostgreSQL foydalanuvchi parolini o'zgartirish
 postgresql_change_password() {
     show_menu_header "POSTGRESQL PAROL O'ZGARTIRISH"
     
-    local username new_password
+    local username new_password new_password2
     
     read -p "Foydalanuvchi nomi: " username
     read -s -p "Yangi parol: " new_password
@@ -917,7 +987,6 @@ postgresql_change_password() {
     fi
 }
 
-# PostgreSQL ruxsatlar berish
 postgresql_grant_privileges() {
     show_menu_header "POSTGRESQL RUXSATLAR BERISH"
     
@@ -943,29 +1012,17 @@ postgresql_grant_privileges() {
         2) privileges="SELECT" ;;
         3) privileges="SELECT, INSERT, UPDATE, DELETE" ;;
         4) privileges="CREATE, ALTER, DROP" ;;
-        5) 
-            read -p "Ruxsatlarni vergul bilan yozing: " privileges
-            ;;
-        6)
-            read -p "Ruxsatlar: " base_priv
-            privileges="$base_priv WITH GRANT OPTION"
-            ;;
+        5) read -p "Ruxsatlarni vergul bilan yozing: " privileges ;;
+        6) read -p "Ruxsatlar: " base_priv && privileges="$base_priv WITH GRANT OPTION" ;;
+        *) log_error "Noto'g'ri tanlov" && return ;;
     esac
     
-    # Ma'lumotlar bazasiga ruxsat
     sudo -u postgres psql -c "GRANT CONNECT ON DATABASE $database TO $username;" 2>/dev/null
     sudo -u postgres psql -c "GRANT $privileges ON ALL TABLES IN SCHEMA public TO $username;" 2>/dev/null
     sudo -u postgres psql -c "GRANT $privileges ON ALL SEQUENCES IN SCHEMA public TO $username;" 2>/dev/null
-    sudo -u postgres psql -c "GRANT $privileges ON ALL FUNCTIONS IN SCHEMA public TO $username;" 2>/dev/null
-    
-    # Default ruxsatlar
-    sudo -u postgres psql -d "$database" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT $privileges ON TABLES TO $username;" 2>/dev/null
-    sudo -u postgres psql -d "$database" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT $privileges ON SEQUENCES TO $username;" 2>/dev/null
     
     if [ $? -eq 0 ]; then
         log "SUCCESS" "Ruxsatlar berildi: $username"
-        
-        # Grantlarni ko'rish
         echo -e "\n${CYAN}Yangi grantlar:${NC}"
         sudo -u postgres psql -c "\dp $database.*" 2>/dev/null | head -20
     else
@@ -973,7 +1030,6 @@ postgresql_grant_privileges() {
     fi
 }
 
-# PostgreSQL grantlarni ko'rish
 postgresql_show_grants() {
     show_menu_header "POSTGRESQL GRANTLAR"
     
@@ -985,11 +1041,10 @@ postgresql_show_grants() {
     sudo -u postgres psql -c "\dp" 2>/dev/null | grep "$username" || echo "Grantlar topilmadi"
 }
 
-# PostgreSQL ruxsatlarni olib tashlash
 postgresql_revoke_privileges() {
     show_menu_header "POSTGRESQL RUXSATLARNI OLIB TASHLASH"
     
-    local username database
+    local username database privileges
     
     read -p "Foydalanuvchi nomi: " username
     read -p "Ma'lumotlar bazasi: " database
@@ -1001,7 +1056,6 @@ postgresql_revoke_privileges() {
     
     sudo -u postgres psql -c "REVOKE $privileges ON ALL TABLES IN SCHEMA public FROM $username;" 2>/dev/null
     sudo -u postgres psql -c "REVOKE $privileges ON ALL SEQUENCES IN SCHEMA public FROM $username;" 2>/dev/null
-    sudo -u postgres psql -c "REVOKE $privileges ON ALL FUNCTIONS IN SCHEMA public FROM $username;" 2>/dev/null
     
     if [ $? -eq 0 ]; then
         log "SUCCESS" "Ruxsatlar olib tashlandi"
@@ -1010,24 +1064,13 @@ postgresql_revoke_privileges() {
     fi
 }
 
-# PostgreSQL ma'lumotlar bazalarini ko'rish
 postgresql_list_databases() {
     show_menu_header "POSTGRESQL MA'LUMOTLAR BAZALARI"
     
     echo -e "${GREEN}${BOLD}Barcha ma'lumotlar bazalari:${NC}\n"
     sudo -u postgres psql -c "\l+" 2>/dev/null
-    
-    echo -e "\n${GREEN}${BOLD}Hajmlari bilan:${NC}\n"
-    sudo -u postgres psql -c "SELECT 
-        datname as database,
-        pg_database_size(datname) / 1024 / 1024 as size_mb,
-        pg_size_pretty(pg_database_size(datname)) as size_pretty
-    FROM pg_database 
-    WHERE datistemplate = false
-    ORDER BY size_mb DESC;" 2>/dev/null
 }
 
-# Yangi PostgreSQL ma'lumotlar bazasi yaratish
 postgresql_create_database() {
     show_menu_header "YANGI POSTGRESQL MA'LUMOTLAR BAZASI"
     
@@ -1059,7 +1102,6 @@ postgresql_create_database() {
     fi
 }
 
-# PostgreSQL ma'lumotlar bazasini o'chirish
 postgresql_drop_database() {
     show_menu_header "POSTGRESQL MA'LUMOTLAR BAZASINI O'CHIRISH"
     
@@ -1069,7 +1111,6 @@ postgresql_drop_database() {
     read -p "O'chiriladigan ma'lumotlar bazasi: " dbname
     
     if confirm_action "DIQQAT! $dbname butunlay o'chiriladi. Tasdiqlaysizmi?"; then
-        # Ulanishlarni uzish
         sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$dbname';" 2>/dev/null
         sudo -u postgres psql -c "DROP DATABASE $dbname;" 2>/dev/null
         
@@ -1081,115 +1122,86 @@ postgresql_drop_database() {
     fi
 }
 
-# PostgreSQL sozlamalarini ko'rish
 postgresql_config_view() {
     show_menu_header "POSTGRESQL SOZLAMALARI"
     
-    PG_VERSION=$(psql --version | awk '{print $3}' | cut -d. -f1)
-    local config_file="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
+    local pg_version=$(psql --version 2>/dev/null | awk '{print $3}' | cut -d. -f1)
+    local config_file="/etc/postgresql/$pg_version/main/postgresql.conf"
     
     if [[ -f "$config_file" ]]; then
         echo -e "${CYAN}${BOLD}Asosiy sozlamalar:${NC}\n"
         grep -v "^#" "$config_file" | grep -v "^$" | head -50
-        
-        echo -e "\n${CYAN}${BOLD}Muhim o'zgaruvchilar:${NC}\n"
-        sudo -u postgres psql -c "SELECT name, setting, unit FROM pg_settings WHERE name IN (
-            'max_connections',
-            'shared_buffers',
-            'work_mem',
-            'maintenance_work_mem',
-            'effective_cache_size',
-            'wal_buffers',
-            'checkpoint_completion_target',
-            'random_page_cost',
-            'effective_io_concurrency'
-        );" 2>/dev/null | column -t -s $'\t'
-        
-        echo -e "\n${CYAN}${BOLD}Client sozlamalari:${NC}\n"
-        grep -A 10 "^# - Connection Settings" "$config_file" | grep -v "^#"
     else
         log "ERROR" "Sozlamalar fayli topilmadi"
     fi
 }
 
-# PostgreSQL sozlamalarini o'zgartirish
 postgresql_config_edit() {
     show_menu_header "POSTGRESQL SOZLAMALARINI O'ZGARTIRISH"
     
-    PG_VERSION=$(psql --version | awk '{print $3}' | cut -d. -f1)
-    local config_file="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
+    local pg_version=$(psql --version 2>/dev/null | awk '{print $3}' | cut -d. -f1)
+    local config_file="/etc/postgresql/$pg_version/main/postgresql.conf"
     
     echo "1) Port o'zgartirish"
     echo "2) Maksimal ulanishlar"
     echo "3) Shared buffers hajmi"
     echo "4) Work mem hajmi"
-    echo "5) WAL sozlamalari"
-    echo "6) Log sozlamalari"
-    echo "7) Maxsus sozlama"
-    echo "8) Faylni tahrirlash"
+    echo "5) Log sozlamalari"
+    echo "6) Maxsus sozlama"
+    echo "7) Faylni tahrirlash"
     
     read -p "Tanlov: " config_choice
     
     case $config_choice in
         1)
             read -p "Yangi port (5432): " new_port
-            sudo sed -i "s/^port =.*/port = $new_port/" "$config_file"
+            sudo sed -i "s/^port =.*/port = $new_port/" "$config_file" 2>/dev/null
             log "SUCCESS" "Port o'zgartirildi: $new_port"
             ;;
         2)
             read -p "Maksimal ulanishlar (100): " max_conn
-            sudo sed -i "s/^max_connections =.*/max_connections = $max_conn/" "$config_file"
+            sudo sed -i "s/^max_connections =.*/max_connections = $max_conn/" "$config_file" 2>/dev/null
             log "SUCCESS" "max_connections = $max_conn"
             ;;
         3)
             read -p "Shared buffers hajmi (128MB): " shared_buffers
-            sudo sed -i "s/^shared_buffers =.*/shared_buffers = $shared_buffers/" "$config_file"
+            sudo sed -i "s/^shared_buffers =.*/shared_buffers = $shared_buffers/" "$config_file" 2>/dev/null
             log "SUCCESS" "shared_buffers = $shared_buffers"
             ;;
         4)
             read -p "Work mem hajmi (4MB): " work_mem
-            sudo sed -i "s/^work_mem =.*/work_mem = $work_mem/" "$config_file"
+            sudo sed -i "s/^work_mem =.*/work_mem = $work_mem/" "$config_file" 2>/dev/null
             log "SUCCESS" "work_mem = $work_mem"
             ;;
         5)
-            read -p "WAL buffer hajmi (16MB): " wal_buffers
-            read -p "Checkpoint timeout (5min): " checkpoint_timeout
-            sudo sed -i "s/^wal_buffers =.*/wal_buffers = $wal_buffers/" "$config_file"
-            sudo sed -i "s/^checkpoint_timeout =.*/checkpoint_timeout = $checkpoint_timeout/" "$config_file"
-            log "SUCCESS" "WAL sozlamalari yangilandi"
-            ;;
-        6)
-            echo "log_directory = 'pg_log'" >> "$config_file"
-            echo "log_filename = 'postgresql-%Y-%m-%d.log'" >> "$config_file"
-            echo "log_statement = 'all'" >> "$config_file"
-            echo "log_duration = on" >> "$config_file"
+            echo "log_directory = 'pg_log'" >> "$config_file" 2>/dev/null
+            echo "log_filename = 'postgresql-%Y-%m-%d.log'" >> "$config_file" 2>/dev/null
             log "SUCCESS" "Log sozlamalari yangilandi"
             ;;
-        7)
+        6)
             read -p "O'zgaruvchi nomi: " var_name
             read -p "Yangi qiymat: " var_value
-            echo "$var_name = $var_value" >> "$config_file"
+            echo "$var_name = $var_value" >> "$config_file" 2>/dev/null
             log "SUCCESS" "$var_name = $var_value"
             ;;
-        8)
+        7)
             sudo nano "$config_file"
             log "INFO" "Sozlamalar fayli tahrirlandi"
             ;;
+        *) log_error "Noto'g'ri tanlov" && return ;;
     esac
     
     if confirm_action "PostgreSQL ni qayta ishga tushirish kerak. Hozir bajaramizmi?"; then
-        sudo systemctl restart postgresql
+        sudo systemctl restart postgresql 2>/dev/null
         log "SUCCESS" "PostgreSQL qayta ishga tushirildi"
     fi
 }
 
-# PostgreSQL ulanish URL generatsiya
 postgresql_generate_url() {
     show_menu_header "POSTGRESQL ULANISH URL GENERATSIYASI"
     
     local host port user password database
     
-    # Avval saqlangan sozlamalarni o'qish
     if [[ -f "$CONFIG_DIR/postgres_current.conf" ]]; then
         source "$CONFIG_DIR/postgres_current.conf"
     else
@@ -1205,7 +1217,6 @@ postgresql_generate_url() {
     
     generate_postgresql_url "$host" "$port" "$user" "$password" "$database"
     
-    # Sozlamalarni saqlash
     if confirm_action "Bu sozlamalarni saqlash kerakmi?"; then
         cat > "$CONFIG_DIR/postgres_current.conf" << EOF
 PG_HOST="$host"
@@ -1218,46 +1229,17 @@ EOF
     fi
 }
 
-# PostgreSQL performans statistikasi
 postgresql_performance_stats() {
     show_menu_header "POSTGRESQL PERFORMANS STATISTIKASI"
     
     echo -e "${CYAN}${BOLD}So'rovlar statistikasi:${NC}\n"
-    sudo -u postgres psql -c "SELECT 
-        sum(xact_commit) as commits,
-        sum(xact_rollback) as rollbacks,
-        sum(blks_read) as blocks_read,
-        sum(blks_hit) as blocks_hit
-    FROM pg_stat_database;" 2>/dev/null
-    
-    echo -e "\n${CYAN}${BOLD}Indeks statistikasi:${NC}\n"
-    sudo -u postgres psql -c "SELECT 
-        schemaname,
-        tablename,
-        indexname,
-        idx_scan,
-        idx_tup_read,
-        idx_tup_fetch
-    FROM pg_stat_user_indexes 
-    ORDER BY idx_scan DESC 
-    LIMIT 10;" 2>/dev/null
-    
-    echo -e "\n${CYAN}${BOLD}Eng ko'p ishlatilgan so'rovlar:${NC}\n"
-    sudo -u postgres psql -c "SELECT 
-        query,
-        calls,
-        total_time,
-        rows
-    FROM pg_stat_statements 
-    ORDER BY total_time DESC 
-    LIMIT 10;" 2>/dev/null
+    sudo -u postgres psql -c "SELECT sum(xact_commit) as commits, sum(xact_rollback) as rollbacks, sum(blks_read) as blocks_read, sum(blks_hit) as blocks_hit FROM pg_stat_database;" 2>/dev/null
 }
 
 # ============================================================================
 # UMUMIY FUNKSIYALAR
 # ============================================================================
 
-# Database benchmark
 run_benchmark() {
     show_menu_header "DATABASE BENCHMARK"
     
@@ -1271,24 +1253,14 @@ run_benchmark() {
         1)
             if check_mysql; then
                 log "INFO" "MySQL benchmark boshlanmoqda..."
-                
-                # Test ma'lumotlar bazasi yaratish
                 sudo mysql -e "CREATE DATABASE IF NOT EXISTS benchmark;" 2>/dev/null
                 sudo mysql -e "USE benchmark; CREATE TABLE IF NOT EXISTS test (id INT PRIMARY KEY AUTO_INCREMENT, data VARCHAR(255));" 2>/dev/null
                 
-                # Write test
                 echo -e "\n${CYAN}Yozish testi:${NC}"
-                time (for i in {1..1000}; do
+                time (for i in {1..100}; do
                     sudo mysql -e "INSERT INTO benchmark.test (data) VALUES ('test_data_$i');" 2>/dev/null
                 done)
                 
-                # Read test
-                echo -e "\n${CYAN}O'qish testi:${NC}"
-                time (for i in {1..1000}; do
-                    sudo mysql -e "SELECT * FROM benchmark.test WHERE id = $((RANDOM % 1000 + 1));" 2>/dev/null
-                done)
-                
-                # Tozalash
                 sudo mysql -e "DROP DATABASE benchmark;" 2>/dev/null
             else
                 log "ERROR" "MySQL o'rnatilmagan"
@@ -1297,24 +1269,14 @@ run_benchmark() {
         2)
             if check_postgresql; then
                 log "INFO" "PostgreSQL benchmark boshlanmoqda..."
-                
-                # Test ma'lumotlar bazasi yaratish
                 sudo -u postgres psql -c "CREATE DATABASE benchmark;" 2>/dev/null
                 sudo -u postgres psql -d benchmark -c "CREATE TABLE test (id SERIAL PRIMARY KEY, data VARCHAR(255));" 2>/dev/null
                 
-                # Write test
                 echo -e "\n${CYAN}Yozish testi:${NC}"
-                time (for i in {1..1000}; do
+                time (for i in {1..100}; do
                     sudo -u postgres psql -d benchmark -c "INSERT INTO test (data) VALUES ('test_data_$i');" 2>/dev/null
                 done)
                 
-                # Read test
-                echo -e "\n${CYAN}O'qish testi:${NC}"
-                time (for i in {1..1000}; do
-                    sudo -u postgres psql -d benchmark -c "SELECT * FROM test WHERE id = $((RANDOM % 1000 + 1));" 2>/dev/null
-                done)
-                
-                # Tozalash
                 sudo -u postgres psql -c "DROP DATABASE benchmark;" 2>/dev/null
             else
                 log "ERROR" "PostgreSQL o'rnatilmagan"
@@ -1325,10 +1287,11 @@ run_benchmark() {
             run_benchmark 1
             run_benchmark 2
             ;;
+        *) log_error "Noto'g'ri tanlov" ;;
     esac
+    press_enter
 }
 
-# Backup/Restore menyusi
 backup_menu() {
     while true; do
         clear
@@ -1351,18 +1314,18 @@ backup_menu() {
                     mysql_list_databases
                     read -p "Backup qilinadigan DB: " dbname
                     backup_file="$BACKUP_DIR/mysql_${dbname}_$(date +%Y%m%d_%H%M%S).sql"
-                    sudo mysqldump "$dbname" > "$backup_file"
-                    gzip "$backup_file"
+                    sudo mysqldump "$dbname" > "$backup_file" 2>/dev/null
+                    gzip "$backup_file" 2>/dev/null
                     log "SUCCESS" "Backup yaratildi: ${backup_file}.gz"
                 fi
                 ;;
             2)
                 if check_mysql; then
                     echo "Mavjud backup'lar:"
-                    ls -lh "$BACKUP_DIR"/mysql_*.sql.gz
+                    ls -lh "$BACKUP_DIR"/mysql_*.sql.gz 2>/dev/null
                     read -p "Backup fayl: " backup_file
                     read -p "Restore qilinadigan DB: " dbname
-                    gunzip -c "$backup_file" | sudo mysql "$dbname"
+                    gunzip -c "$backup_file" | sudo mysql "$dbname" 2>/dev/null
                     log "SUCCESS" "Restore bajarildi"
                 fi
                 ;;
@@ -1371,18 +1334,18 @@ backup_menu() {
                     postgresql_list_databases
                     read -p "Backup qilinadigan DB: " dbname
                     backup_file="$BACKUP_DIR/postgres_${dbname}_$(date +%Y%m%d_%H%M%S).sql"
-                    sudo -u postgres pg_dump "$dbname" > "$backup_file"
-                    gzip "$backup_file"
+                    sudo -u postgres pg_dump "$dbname" > "$backup_file" 2>/dev/null
+                    gzip "$backup_file" 2>/dev/null
                     log "SUCCESS" "Backup yaratildi: ${backup_file}.gz"
                 fi
                 ;;
             4)
                 if check_postgresql; then
                     echo "Mavjud backup'lar:"
-                    ls -lh "$BACKUP_DIR"/postgres_*.sql.gz
+                    ls -lh "$BACKUP_DIR"/postgres_*.sql.gz 2>/dev/null
                     read -p "Backup fayl: " backup_file
                     read -p "Restore qilinadigan DB: " dbname
-                    gunzip -c "$backup_file" | sudo -u postgres psql "$dbname"
+                    gunzip -c "$backup_file" | sudo -u postgres psql "$dbname" 2>/dev/null
                     log "SUCCESS" "Restore bajarildi"
                 fi
                 ;;
@@ -1393,21 +1356,21 @@ backup_menu() {
                 ls -lh "$BACKUP_DIR"/postgres_*.sql.gz 2>/dev/null || echo "Topilmadi"
                 ;;
             6)
-                echo "0 2 * * * root $SCRIPT_DIR/settingsdbpro.sh --auto-backup mysql" > /etc/cron.d/db_auto_backup
-                echo "0 3 * * * root $SCRIPT_DIR/settingsdbpro.sh --auto-backup postgresql" >> /etc/cron.d/db_auto_backup
+                echo "0 2 * * * root $SCRIPT_DIR/settingsdbpro.sh --auto-backup mysql" > /etc/cron.d/db_auto_backup 2>/dev/null
+                echo "0 3 * * * root $SCRIPT_DIR/settingsdbpro.sh --auto-backup postgresql" >> /etc/cron.d/db_auto_backup 2>/dev/null
                 log "SUCCESS" "Avtomatik backup sozlandi (soat 02:00 va 03:00)"
                 ;;
             7)
-                find "$BACKUP_DIR" -name "*.sql.gz" -mtime +7 -delete
+                find "$BACKUP_DIR" -name "*.sql.gz" -mtime +7 -delete 2>/dev/null
                 log "SUCCESS" "7 kundan eski backup'lar tozalandi"
                 ;;
             8) break ;;
+            *) log_error "Noto'g'ri tanlov" ;;
         esac
         press_enter
     done
 }
 
-# Connection manager
 connection_manager() {
     while true; do
         clear
@@ -1454,30 +1417,28 @@ EOF
                 ;;
             5)
                 read -p "Ulanish nomi: " conn_name
-                # Ulanishni test qilish
+                echo "Test qilish funksiyasi ishlab chiqilmoqda..."
                 ;;
             6)
                 mkdir -p "$SSL_DIR"
                 echo "SSL sertifikatlar $SSL_DIR papkasida saqlanadi"
                 ;;
             7) break ;;
+            *) log_error "Noto'g'ri tanlov" ;;
         esac
         press_enter
     done
 }
 
-# Monitoring menyusi
 monitoring_menu() {
     while true; do
         clear
         show_menu_header "MONITORING MARKAZI"
         
         echo "1) 📊 Real-time monitoring"
-        echo "2) 📈 Grafiklar (soddalashtirilgan)"
-        echo "3) 📉 Performans metrikalari"
-        echo "4) 🔔 Ogohlantirishlar"
-        echo "5) 📋 Hisobot generatsiya"
-        echo "6) ◀️ Orqaga"
+        echo "2) 📉 Performans metrikalari"
+        echo "3) 📋 Hisobot generatsiya"
+        echo "4) ◀️ Orqaga"
         
         read -p "Tanlov: " mon_choice
         
@@ -1485,7 +1446,13 @@ monitoring_menu() {
             1)
                 watch -n 2 "echo 'MySQL:' && mysql -e 'SHOW PROCESSLIST' 2>/dev/null | head -20 && echo '\nPostgreSQL:' && psql -c 'SELECT * FROM pg_stat_activity' 2>/dev/null | head -20"
                 ;;
-            5)
+            2)
+                echo -e "${CYAN}MySQL:${NC}"
+                mysql_performance_stats
+                echo -e "\n${CYAN}PostgreSQL:${NC}"
+                postgresql_performance_stats
+                ;;
+            3)
                 report_file="$LOG_DIR/report_$(date +%Y%m%d).txt"
                 {
                     echo "DATABASE HISOBOT $(date)"
@@ -1496,10 +1463,11 @@ monitoring_menu() {
                     echo ""
                     echo "PostgreSQL status:"
                     postgresql_status
-                } > "$report_file"
+                } > "$report_file" 2>/dev/null
                 log "SUCCESS" "Hisobot yaratildi: $report_file"
                 ;;
-            6) break ;;
+            4) break ;;
+            *) log_error "Noto'g'ri tanlov" ;;
         esac
         press_enter
     done
@@ -1519,12 +1487,15 @@ main_menu() {
         echo -e "${GREEN}4)${NC} 📦 Backup/Restore"
         echo -e "${GREEN}5)${NC} 📊 Monitoring"
         echo -e "${GREEN}6)${NC} ⚡ Benchmark"
-        echo -e "${GREEN}7)${NC} 🔧 Sozlamalar"
-        echo -e "${GREEN}8)${NC} 📜 Loglarni ko'rish"
-        echo -e "${GREEN}9)${NC} ℹ️ Tizim ma'lumotlari"
-        echo -e "${GREEN}10)${NC} 🚪 Chiqish"
+        echo -e "${GREEN}7)${NC} 🧹 Kesh tozalash"
+        echo -e "${GREEN}8)${NC} 👑 Root fayllarini boshqarish"
+        echo -e "${GREEN}9)${NC} 📁 Dastur papkalarini tozalash"
+        echo -e "${GREEN}10)${NC} 📜 Loglarni ko'rish"
+        echo -e "${GREEN}11)${NC} ℹ️ Tizim ma'lumotlari"
+        echo -e "${GREEN}12)${NC} 🔧 Sozlamalar"
+        echo -e "${GREEN}13)${NC} 🚪 Chiqish"
         
-        echo -e "\n${YELLOW}Tanlang [1-10]:${NC} "
+        echo -e "\n${YELLOW}Tanlang [1-13]:${NC} "
         read main_choice
         
         case $main_choice in
@@ -1576,6 +1547,7 @@ main_menu() {
                         13) mysql_generate_url ;;
                         14) mysql_performance_stats ;;
                         15) break ;;
+                        *) log_error "Noto'g'ri tanlov" ;;
                     esac
                     press_enter
                 done
@@ -1628,6 +1600,7 @@ main_menu() {
                         13) postgresql_generate_url ;;
                         14) postgresql_performance_stats ;;
                         15) break ;;
+                        *) log_error "Noto'g'ri tanlov" ;;
                     esac
                     press_enter
                 done
@@ -1636,30 +1609,39 @@ main_menu() {
             4) backup_menu ;;
             5) monitoring_menu ;;
             6) run_benchmark ;;
-            7)
+            7) clean_cache ;;
+            8) clean_root_files ;;
+            9) clean_program_folders ;;
+            10)
+                tail -50 "$LOG_DIR/db_manager.log" 2>/dev/null
+                press_enter
+                ;;
+            11)
+                echo -e "\n${CYAN}Tizim ma'lumotlari:${NC}"
+                echo "Ubuntu: $(lsb_release -d 2>/dev/null | cut -f2)"
+                echo "Kernel: $(uname -r)"
+                echo "CPU: $(nproc) core"
+                echo "RAM: $(free -h 2>/dev/null | grep Mem | awk '{print $2}')"
+                echo "Disk: $(df -h / 2>/dev/null | awk 'NR==2 {print $2}')"
+                echo "MySQL: $(mysql --version 2>/dev/null || echo 'O\'rnatilmagan')"
+                echo "PostgreSQL: $(psql --version 2>/dev/null || echo 'O\'rnatilmagan')"
+                press_enter
+                ;;
+            12)
                 echo "Sozlamalar fayli: $CONFIG_DIR"
                 echo "Log fayli: $LOG_DIR"
                 echo "Backup papka: $BACKUP_DIR"
+                echo "Kesh papka: $CACHE_DIR"
+                echo "Data papka: $DATA_DIR"
+                echo "Archive papka: $ARCHIVE_DIR"
+                press_enter
                 ;;
-            8)
-                tail -50 "$LOG_DIR/db_manager.log"
-                ;;
-            9)
-                echo -e "\n${CYAN}Tizim ma'lumotlari:${NC}"
-                echo "Ubuntu: $(lsb_release -d | cut -f2)"
-                echo "Kernel: $(uname -r)"
-                echo "CPU: $(nproc) core"
-                echo "RAM: $(free -h | grep Mem | awk '{print $2}')"
-                echo "Disk: $(df -h / | awk 'NR==2 {print $2}')"
-                echo "MySQL: $(mysql --version 2>/dev/null || echo 'O\'rnatilmagan')"
-                echo "PostgreSQL: $(psql --version 2>/dev/null || echo 'O\'rnatilmagan')"
-                ;;
-            10)
+            13)
                 log "INFO" "Dastur yakunlandi"
                 exit 0
                 ;;
+            *) log_error "Noto'g'ri tanlov: $main_choice" ;;
         esac
-        press_enter
     done
 }
 
@@ -1680,24 +1662,35 @@ if [[ $# -gt 0 ]]; then
         --auto-backup)
             case $2 in
                 mysql)
-                    mysql_list_databases
-                    for db in $(sudo mysql -e "SHOW DATABASES;" | grep -v "Database\|information_schema\|performance_schema\|mysql\|sys"); do
+                    for db in $(sudo mysql -e "SHOW DATABASES;" 2>/dev/null | grep -v "Database\|information_schema\|performance_schema\|mysql\|sys"); do
                         backup_file="$BACKUP_DIR/mysql_${db}_$(date +%Y%m%d).sql"
-                        sudo mysqldump "$db" | gzip > "${backup_file}.gz"
+                        sudo mysqldump "$db" 2>/dev/null | gzip > "${backup_file}.gz" 2>/dev/null
                     done
                     ;;
                 postgresql)
-                    for db in $(sudo -u postgres psql -c "\l" | grep -v "template\|postgres" | awk '{print $1}' | grep -v "List\|Name\|--\|("); do
+                    for db in $(sudo -u postgres psql -c "\l" 2>/dev/null | grep -v "template\|postgres" | awk '{print $1}' | grep -v "List\|Name\|--\|("); do
                         backup_file="$BACKUP_DIR/postgres_${db}_$(date +%Y%m%d).sql"
-                        sudo -u postgres pg_dump "$db" | gzip > "${backup_file}.gz"
+                        sudo -u postgres pg_dump "$db" 2>/dev/null | gzip > "${backup_file}.gz" 2>/dev/null
                     done
                     ;;
             esac
+            ;;
+        --clean-cache)
+            clean_cache
+            ;;
+        --clean-root)
+            clean_root_files
+            ;;
+        --clean-folders)
+            clean_program_folders
             ;;
         --help)
             echo "Foydalanish: sudo $0 [OPTION]"
             echo "Options:"
             echo "  --auto-backup [mysql|postgresql]  Avtomatik backup"
+            echo "  --clean-cache                      Kesh tozalash"
+            echo "  --clean-root                       Root fayllarini tozalash"
+            echo "  --clean-folders                    Dastur papkalarini tozalash"
             echo "  --help                             Yordam"
             ;;
         *)
