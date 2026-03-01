@@ -1,8 +1,3 @@
-Men sizga barcha dasturlar haqida to'liq ma'lumot beruvchi `README.md` faylini tayyorlab beraman:
-
-# `README.md`
-
-```markdown
 # PROFESSIONAL DATABASE MANAGEMENT SYSTEM
 
 <div align="center">
