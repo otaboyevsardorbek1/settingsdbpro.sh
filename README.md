@@ -658,5 +658,3 @@ services:
 ```
 
 ---
-
-Bu `README.md` fayli loyihangiz haqida to'liq ma'lumot beradi va foydalanuvchilarga dasturni o'rnatish va ishlatishda yordam beradi.
